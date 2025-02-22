@@ -1,0 +1,8 @@
+package main
+
+import "archiver/cmd"
+
+func main() {
+	// arc
+	cmd.Execute()
+}
