@@ -20,4 +20,10 @@ func packedFileName(path string) string {
 	return strings.TrimSuffix(fileName, filepath.Ext(fileName)) + "." + packedExtension
 }
 
+const unpackedExtension = "txt"
 
+func unpackedFileName(path string) string {
+	fileName := filepath.Base(path)
+
+	return strings.TrimSuffix(fileName, filepath.Ext(fileName)) + "." + unpackedExtension
+}
