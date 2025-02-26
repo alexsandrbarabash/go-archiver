@@ -4,7 +4,6 @@ import (
 	"archiver/lib/vlc"
 	"io"
 	"os"
-
 	"github.com/spf13/cobra"
 )
 
@@ -34,8 +33,7 @@ func unpack(_ *cobra.Command, args []string) {
 		handleErr(err)
 	}
 
-	packed := vlc.Decode(string(data))
-	// packed := "" + string(data) // TODO
+	packed := vlc.Decode(data)
 
 	err = os.WriteFile(unpackedFileName(filePath), []byte(packed), 0644)
 	if err != nil {
