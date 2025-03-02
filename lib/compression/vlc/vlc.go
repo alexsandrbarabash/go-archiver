@@ -1,48 +1,125 @@
 package vlc
 
 import (
+	"archiver/lib/compression/vlc/table"
+	"bytes"
+	"encoding/binary"
+	"encoding/gob"
+	"log"
 	"strings"
 	"unicode"
 )
 
+type encodingTable map[rune]string
+
 type EncoderDecoder struct {
+	tblGenerator table.Generator
 }
 
-func New() EncoderDecoder {
-	return EncoderDecoder{}
+func New(tblGenerator table.Generator) EncoderDecoder {
+	return EncoderDecoder{tblGenerator: tblGenerator}
 }
 
-func (_ EncoderDecoder) Encode(str string) []byte {
-	str = prepareText(str)
+func (ed EncoderDecoder) Encode(str string) []byte {
+	tbl := ed.tblGenerator.NewTable(str)
 
-	chunks := splitByChunks(encodeBin(str), chunksSize)
+	encoded := encodeBin(str, tbl)
 
-	return chunks.Bytes()
+	// return chunks.Bytes()
+	return buildEncodedFile(tbl, encoded)
 }
 
 func (_ EncoderDecoder) Decode(encodeData []byte) string {
-	bString := NewBinChunks(encodeData).Join()
+	tbl, data := parseFile(encodeData)
 
-	dTree := getEncodingTable().DecodingTree()
-
-	return exportText(dTree.Decode(bString))
+	return tbl.Decode(data)
 }
 
+func parseFile(data []byte) (table.EncodingTable, string) {
+	const (
+		tableSizeBytesCount = 4
+		dataSizeBytesCount  = 4
+	)
+
+	tableSizeBinary, data := data[:tableSizeBytesCount], data[tableSizeBytesCount:]
+	dataSizeBinary, data := data[:dataSizeBytesCount], data[dataSizeBytesCount:]
+
+	tableSize := binary.BigEndian.Uint32(tableSizeBinary)
+	dataSize := binary.BigEndian.Uint32(dataSizeBinary)
+
+	tblBinary, data := data[:tableSize], data[tableSize:]
+
+	tbl := decodeTable(tblBinary)
+
+	body := NewBinChunks(data).Join()
+
+	return tbl, body[:dataSize]
+}
+
+func buildEncodedFile(tbl table.EncodingTable, data string) []byte {
+	encodedTl := encodedTable(tbl)
+
+	var buf bytes.Buffer
+
+	buf.Write(encodeInt(len(encodedTl)))
+	buf.Write(encodeInt(len(data)))
+	buf.Write(encodedTl)
+	buf.Write(splitByChunks(data, chunksSize).Bytes())
+
+	return buf.Bytes()
+}
+
+func encodeInt(num int) []byte {
+	res := make([]byte, 4)
+	binary.BigEndian.PutUint32(res, uint32(num))
+
+	return res
+}
+
+func decodeTable(tblBinary []byte) table.EncodingTable {
+	var tbl table.EncodingTable
+
+	r := bytes.NewReader(tblBinary)
+
+	if err := gob.NewDecoder(r).Decode(&tbl); err != nil {
+		log.Fatal("can't decode table: ", err)
+
+	}
+
+	return tbl
+}
+
+func encodedTable(tbl table.EncodingTable) []byte {
+	var tableBuf bytes.Buffer
+
+	if err := gob.NewEncoder(&tableBuf).Encode(tbl); err != nil {
+		log.Fatal("can't serealize table: ", err)
+	}
+
+	return tableBuf.Bytes()
+}
+
+// func (_ EncoderDecoder) Decode(encodeData []byte) string {
+// 	bString := NewBinChunks(encodeData).Join()
+
+// 	dTree := getEncodingTable().DecodingTree()
+
+// 	return exportText(dTree.Decode(bString))
+// }
+
 // encodeBin encodes str into binary codes string without spaces
-func encodeBin(str string) string {
+func encodeBin(str string, table table.EncodingTable) string {
 	var buf strings.Builder
 
 	for _, ch := range str {
-		buf.WriteString(bin(ch))
+		buf.WriteString(bin(ch, table))
 	}
 
 	return buf.String()
 
 }
 
-func bin(ch rune) string {
-	table := getEncodingTable()
-
+func bin(ch rune, table table.EncodingTable) string {
 	res, ok := table[ch]
 
 	if !ok {
@@ -50,57 +127,6 @@ func bin(ch rune) string {
 	}
 
 	return res
-}
-
-func getEncodingTable() encodingTable {
-	return encodingTable{
-		' ': "11",
-		't': "1001",
-		'n': "10000",
-		's': "0101",
-		'r': "01000",
-		'd': "00101",
-		'!': "001000",
-		'c': "000101",
-		'm': "000011",
-		'g': "0000100",
-		'b': "0000010",
-		'v': "00000001",
-		'k': "0000000001",
-		'q': "000000000001",
-		'e': "101",
-		'o': "10001",
-		'a': "011",
-		'i': "01001",
-		'h': "0011",
-		'l': "001001",
-		'u': "00011",
-		'f': "000100",
-		'p': "0000101",
-		'w': "0000011",
-		'y': "0000001",
-		'j': "000000001",
-		'x': "00000000001",
-		'z': "000000000000",
-	}
-}
-
-// prepareText prepares text to be fit for encode:
-// changes upper case letters to: ! + lower case letter
-// i.g.: My name is Ted -> !my name is !ted
-func prepareText(str string) string {
-	var buf strings.Builder
-
-	for _, ch := range str {
-		if unicode.IsUpper(ch) {
-			buf.WriteRune('!')
-			buf.WriteRune(unicode.ToLower(ch))
-		} else {
-			buf.WriteRune(ch)
-		}
-	}
-
-	return buf.String()
 }
 
 // exportText is opposite to prepareText, it prepares decode text to export:

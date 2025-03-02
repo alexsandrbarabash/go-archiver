@@ -11,7 +11,6 @@ type BinaryChunks []BinaryChunk
 
 type BinaryChunk string
 
-type encodingTable map[rune]string
 
 const chunksSize = 8
 
